@@ -1084,6 +1084,9 @@ on boot
     chown root system /sys/block/zram0/writeback
     chmod 0664 /sys/block/zram0/writeback
 
+    # allow system to communicate pocket state
+    chown system system /sys/kernel/pocket_judge/inpocket
+
     # to access F2FS sysfs on dm-<num> directly
     mkdir /dev/sys/fs/by-name 0755 system system
     symlink /sys/fs/f2fs/${dev.mnt.dev.data} /dev/sys/fs/by-name/userdata
