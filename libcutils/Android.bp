@@ -144,6 +144,9 @@ cc_library {
         "//apex_available:platform",
         "//apex_available:anyapex",
     ],
+    header_abi_checker: {
+        enabled: false,
+    },
     min_sdk_version: "29",
     native_bridge_supported: true,
     srcs: [
