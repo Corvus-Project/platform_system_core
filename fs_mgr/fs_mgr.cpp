@@ -2109,6 +2109,8 @@ static bool PrepareZramBackingDevice(off64_t size) {
 
     ConfigureQueueDepth(loop_device, "/");
 
+    ConfigureQueueDepth(loop_device, "/");
+
     // set block size & direct IO
     unique_fd loop_fd(TEMP_FAILURE_RETRY(open(loop_device.c_str(), O_RDWR | O_CLOEXEC)));
     if (loop_fd.get() == -1) {
