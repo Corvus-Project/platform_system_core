@@ -194,39 +194,22 @@ void SetCgroupAction::DropResourceCaching() {
     fd_.reset(FDS_NOT_CACHED);
 }
 
-bool SetCgroupAction::AddTidToCgroup(int tid, int fd, const char* controller_name) {
+bool SetCgroupAction::AddTidToCgroup(int tid, int fd) {
     if (tid <= 0) {
         return true;
     }
 
     std::string value = std::to_string(tid);
 
-    if (TEMP_FAILURE_RETRY(write(fd, value.c_str(), value.length())) == value.length()) {
-        return true;
-    }
-
-    // If the thread is in the process of exiting, don't flag an error
-    if (errno == ESRCH) {
-        return true;
-    }
-
-    // ENOSPC is returned when cpuset cgroup that we are joining has no online cpus
-    if (errno == ENOSPC && !strcmp(controller_name, "cpuset")) {
-        // This is an abnormal case happening only in testing, so report it only once
-        static bool empty_cpuset_reported = false;
-
-        if (empty_cpuset_reported) {
-            return true;
+    if (TEMP_FAILURE_RETRY(write(fd, value.c_str(), value.length())) < 0) {
+        // If the thread is in the process of exiting, don't flag an error
+        if (errno != ESRCH) {
+            PLOG(ERROR) << "AddTidToCgroup failed to write '" << value << "'; fd=" << fd;
+            return false;
         }
-
-        LOG(ERROR) << "Failed to add task '" << value
-                   << "' into cpuset because all cpus in that cpuset are offline";
-        empty_cpuset_reported = true;
-    } else {
-        PLOG(ERROR) << "AddTidToCgroup failed to write '" << value << "'; fd=" << fd;
     }
 
-    return false;
+    return true;
 }
 
 bool SetCgroupAction::ExecuteForProcess(uid_t uid, pid_t pid) const {
@@ -236,7 +219,7 @@ bool SetCgroupAction::ExecuteForProcess(uid_t uid, pid_t pid) const {
         PLOG(WARNING) << "Failed to open " << procs_path;
         return false;
     }
-    if (!AddTidToCgroup(pid, tmp_fd, controller()->name())) {
+    if (!AddTidToCgroup(pid, tmp_fd)) {
         LOG(ERROR) << "Failed to add task into cgroup";
         return false;
     }
@@ -248,7 +231,7 @@ bool SetCgroupAction::ExecuteForTask(int tid) const {
     std::lock_guard<std::mutex> lock(fd_mutex_);
     if (IsFdValid()) {
         // fd is cached, reuse it
-        if (!AddTidToCgroup(tid, fd_, controller()->name())) {
+        if (!AddTidToCgroup(tid, fd_)) {
             LOG(ERROR) << "Failed to add task into cgroup";
             return false;
         }
@@ -273,7 +256,7 @@ bool SetCgroupAction::ExecuteForTask(int tid) const {
         PLOG(WARNING) << "Failed to open " << tasks_path << ": " << strerror(errno);
         return false;
     }
-    if (!AddTidToCgroup(tid, tmp_fd, controller()->name())) {
+    if (!AddTidToCgroup(tid, tmp_fd)) {
         LOG(ERROR) << "Failed to add task into cgroup";
         return false;
     }
