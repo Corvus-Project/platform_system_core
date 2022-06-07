@@ -108,67 +108,50 @@ class SetAttributeAction : public ProfileAction {
     std::string value_;
 };
 
-// Abstract profile element for cached fd
-class CachedFdProfileAction : public ProfileAction {
+// Set cgroup profile element
+class SetCgroupAction : public ProfileAction {
   public:
+    SetCgroupAction(const CgroupController& c, const std::string& p);
+
+    virtual bool ExecuteForProcess(uid_t uid, pid_t pid) const;
+    virtual bool ExecuteForTask(int tid) const;
     virtual void EnableResourceCaching();
     virtual void DropResourceCaching();
 
-  protected:
+    const CgroupController* controller() const { return &controller_; }
+    std::string path() const { return path_; }
+
+  private:
     enum FdState {
         FDS_INACCESSIBLE = -1,
         FDS_APP_DEPENDENT = -2,
         FDS_NOT_CACHED = -3,
     };
 
+    CgroupController controller_;
+    std::string path_;
     android::base::unique_fd fd_;
     mutable std::mutex fd_mutex_;
 
     static bool IsAppDependentPath(const std::string& path);
-
-    void InitFd(const std::string& path);
-    bool IsFdValid() const { return fd_ > FDS_INACCESSIBLE; }
-
-    virtual const std::string GetPath() const = 0;
-};
-
-// Set cgroup profile element
-class SetCgroupAction : public CachedFdProfileAction {
-  public:
-    SetCgroupAction(const CgroupController& c, const std::string& p);
-
-    virtual bool ExecuteForProcess(uid_t uid, pid_t pid) const;
-    virtual bool ExecuteForTask(int tid) const;
-
-    const CgroupController* controller() const { return &controller_; }
-
-  protected:
-    const std::string GetPath() const override { return controller_.GetTasksFilePath(path_); }
-
-  private:
-    CgroupController controller_;
-    std::string path_;
-
     static bool AddTidToCgroup(int tid, int fd, const char* controller_name);
+
+    bool IsFdValid() const { return fd_ > FDS_INACCESSIBLE; }
 };
 
 // Write to file action
-class WriteFileAction : public CachedFdProfileAction {
+class WriteFileAction : public ProfileAction {
   public:
-    WriteFileAction(const std::string& path, const std::string& value, bool logfailures);
+    WriteFileAction(const std::string& filepath, const std::string& value,
+                    bool logfailures) noexcept
+        : filepath_(filepath), value_(value), logfailures_(logfailures) {}
 
     virtual bool ExecuteForProcess(uid_t uid, pid_t pid) const;
     virtual bool ExecuteForTask(int tid) const;
 
-  protected:
-    const std::string GetPath() const override { return path_; }
-
   private:
-    std::string path_, value_;
+    std::string filepath_, value_;
     bool logfailures_;
-
-    static bool WriteValueToFile(const std::string& value, const std::string& path,
-                                 bool logfailures);
 };
 
 class TaskProfile {
