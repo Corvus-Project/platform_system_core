@@ -45,14 +45,19 @@ class ProfileAttribute {
 // Abstract profile element
 class ProfileAction {
   public:
+    enum ResourceCacheType { RCT_TASK = 0, RCT_PROCESS, RCT_COUNT };
+
     virtual ~ProfileAction() {}
 
     // Default implementations will fail
     virtual bool ExecuteForProcess(uid_t, pid_t) const { return false; };
     virtual bool ExecuteForTask(int) const { return false; };
 
-    virtual void EnableResourceCaching() {}
-    virtual void DropResourceCaching() {}
+    virtual void EnableResourceCaching(ResourceCacheType) {}
+    virtual void DropResourceCaching(ResourceCacheType) {}
+
+  protected:
+    enum CacheUseResult { SUCCESS, FAIL, UNUSED };
 };
 
 // Profile actions
@@ -115,43 +120,40 @@ class SetCgroupAction : public ProfileAction {
 
     virtual bool ExecuteForProcess(uid_t uid, pid_t pid) const;
     virtual bool ExecuteForTask(int tid) const;
-    virtual void EnableResourceCaching();
-    virtual void DropResourceCaching();
+    virtual void EnableResourceCaching(ResourceCacheType cache_type);
+    virtual void DropResourceCaching(ResourceCacheType cache_type);
 
     const CgroupController* controller() const { return &controller_; }
-    std::string path() const { return path_; }
 
   private:
-    enum FdState {
-        FDS_INACCESSIBLE = -1,
-        FDS_APP_DEPENDENT = -2,
-        FDS_NOT_CACHED = -3,
-    };
-
     CgroupController controller_;
     std::string path_;
-    android::base::unique_fd fd_;
+    android::base::unique_fd fd_[ProfileAction::RCT_COUNT];
     mutable std::mutex fd_mutex_;
 
-    static bool IsAppDependentPath(const std::string& path);
-    static bool AddTidToCgroup(int tid, int fd);
-
-    bool IsFdValid() const { return fd_ > FDS_INACCESSIBLE; }
+    static bool AddTidToCgroup(int tid, int fd, const char* controller_name);
+    CacheUseResult UseCachedFd(ResourceCacheType cache_type, int id) const;
 };
 
 // Write to file action
 class WriteFileAction : public ProfileAction {
   public:
-    WriteFileAction(const std::string& filepath, const std::string& value,
-                    bool logfailures) noexcept
-        : filepath_(filepath), value_(value), logfailures_(logfailures) {}
+    WriteFileAction(const std::string& path, const std::string& value, bool logfailures);
 
     virtual bool ExecuteForProcess(uid_t uid, pid_t pid) const;
     virtual bool ExecuteForTask(int tid) const;
+    virtual void EnableResourceCaching(ResourceCacheType cache_type);
+    virtual void DropResourceCaching(ResourceCacheType cache_type);
 
   private:
-    std::string filepath_, value_;
+    std::string path_, value_;
     bool logfailures_;
+    android::base::unique_fd fd_;
+    mutable std::mutex fd_mutex_;
+
+    static bool WriteValueToFile(const std::string& value, const std::string& path,
+                                 bool logfailures);
+    CacheUseResult UseCachedFd(ResourceCacheType cache_type, const std::string& value) const;
 };
 
 class TaskProfile {
@@ -163,8 +165,8 @@ class TaskProfile {
 
     bool ExecuteForProcess(uid_t uid, pid_t pid) const;
     bool ExecuteForTask(int tid) const;
-    void EnableResourceCaching();
-    void DropResourceCaching();
+    void EnableResourceCaching(ProfileAction::ResourceCacheType cache_type);
+    void DropResourceCaching(ProfileAction::ResourceCacheType cache_type);
 
   private:
     bool res_cached_;
@@ -179,8 +181,8 @@ class ApplyProfileAction : public ProfileAction {
 
     virtual bool ExecuteForProcess(uid_t uid, pid_t pid) const;
     virtual bool ExecuteForTask(int tid) const;
-    virtual void EnableResourceCaching();
-    virtual void DropResourceCaching();
+    virtual void EnableResourceCaching(ProfileAction::ResourceCacheType cache_type);
+    virtual void DropResourceCaching(ProfileAction::ResourceCacheType cache_type);
 
   private:
     std::vector<std::shared_ptr<TaskProfile>> profiles_;
@@ -193,8 +195,9 @@ class TaskProfiles {
 
     TaskProfile* GetProfile(const std::string& name) const;
     const ProfileAttribute* GetAttribute(const std::string& name) const;
-    void DropResourceCaching() const;
-    bool SetProcessProfiles(uid_t uid, pid_t pid, const std::vector<std::string>& profiles);
+    void DropResourceCaching(ProfileAction::ResourceCacheType cache_type) const;
+    bool SetProcessProfiles(uid_t uid, pid_t pid, const std::vector<std::string>& profiles,
+                            bool use_fd_cache);
     bool SetTaskProfiles(int tid, const std::vector<std::string>& profiles, bool use_fd_cache);
 
   private:
