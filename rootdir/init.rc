@@ -823,7 +823,6 @@ on post-fs-data
     mkdir /data/misc/odsign 0710 root system
     # directory used for odsign metrics
     mkdir /data/misc/odsign/metrics 0770 root system
-
     # Directory for VirtualizationService temporary image files.
     # Delete any stale files owned by the old virtualizationservice uid (b/230056726).
     chmod 0770 /data/misc/virtualizationservice
@@ -1029,22 +1028,29 @@ on zygote-start && property:ro.crypto.state=unencrypted
     # A/B update verifier that marks a successful boot.
     exec_start update_verifier_nonencrypted
     start netd
-    start zygote
-    start zygote_secondary
+    trigger zygote-run
 
 on zygote-start && property:ro.crypto.state=unsupported
     wait_for_prop odsign.verification.done 1
     # A/B update verifier that marks a successful boot.
     exec_start update_verifier_nonencrypted
     start netd
-    start zygote
-    start zygote_secondary
+    trigger zygote-run
 
 on zygote-start && property:ro.crypto.state=encrypted && property:ro.crypto.type=file
     wait_for_prop odsign.verification.done 1
     # A/B update verifier that marks a successful boot.
     exec_start update_verifier_nonencrypted
     start netd
+    trigger zygote-run
+
+on zygote-run && property:ro.zygote=zygote32
+    start zygote
+
+on zygote-run && property:ro.zygote=zygote64
+    start zygote
+
+on zygote-run && property:ro.zygote=zygote64_32
     start zygote
     start zygote_secondary
 
