@@ -319,6 +319,9 @@ init_first_stage_cc_defaults {
             installable: false,
         },
     },
+    lto: {
+        never: true,
+    },
 }
 
 cc_binary {
